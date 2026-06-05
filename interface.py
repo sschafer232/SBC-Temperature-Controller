@@ -1,13 +1,8 @@
 from flask import Flask, jsonify
-import temp  # Assuming this is your custom module with read_temp()
+import temp
 from influxdb_client import InfluxDBClient, Point
 
 app = Flask(__name__)
-
-# Configuration (from your original code)
-INFLUX_URL = "http://localhost:8086"
-TOKEN = "<token>"  # Replace with your actual token
-ORG = "demo"
 
 # Initialize InfluxDB Client (do this once at startup)
 client = InfluxDBClient(url=INFLUX_URL, token=TOKEN, org=ORG)
