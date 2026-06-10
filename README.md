@@ -1,8 +1,14 @@
 # pi5_ds18b20_demo
 Temperature monitoring application for one or more DS18B20 sensors. Features a live graph of observed temperatures over a period of 10 minutes.
+
 <img width="882" height="660" alt="temp_monitor" src="https://github.com/user-attachments/assets/cf0dce22-0f66-459d-9a94-fe3ec3a81425" />
 
 ## Multiple sensors
+
+<img width="2028" height="1682" alt="image" src="https://github.com/user-attachments/assets/13270391-c707-42a7-a79f-29ace7db4564" />
+
+<img width="1024" height="768" alt="image" src="https://github.com/user-attachments/assets/c6e02f9f-2384-4fe5-b87b-0bce7455a2b0" />
+
 
 DS18B20s use the 1-Wire protocol, so several sensors can share the same data pin (and a single 4.7kΩ pull-up resistor). Each sensor has a unique 64-bit ROM address and appears as its own `28-xxxx` device under `/sys/bus/w1/devices/`.
 
@@ -22,3 +28,6 @@ https://www.circuitbasics.com/raspberry-pi-ds18b20-temperature-sensor-tutorial/
 
 Local LLM also helped write some of the code:
 qwen3.6-35b-a3b
+
+Also used Claude Code CLI:
+Claude Opus 4.8
