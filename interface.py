@@ -1,3 +1,4 @@
+import datetime
 from flask import Flask, jsonify
 import temp
 from influxdb_client import InfluxDBClient, Point
@@ -38,67 +39,89 @@ def index():
                     padding: 40px 60px;
                     border-radius: 12px;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    max-width: 800px;
+                    max-width: 900px;
                     width: 100%;
                 }
                 h1 { margin: 0 0 20px; font-size: 24px; color: #eee; }
-                .temp { font-size: 72px; font-weight: bold; color: #e94560; }
-                .status { margin-top: 15px; font-size: 14px; color: #aaa; }
-                .error { color: #e94560; font-size: 16px; }
-                .chart-container {
-                    margin-top: 30px;
+                #status { margin-bottom: 20px; font-size: 14px; color: #aaa; }
+                #status.error { color: #e94560; }
+                .sensors {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                    gap: 20px;
+                }
+                .card {
                     background: #0f3460;
                     padding: 20px;
                     border-radius: 8px;
                 }
+                .card h2 {
+                    margin: 0 0 10px;
+                    font-size: 13px;
+                    font-weight: normal;
+                    color: #aaa;
+                    word-break: break-all;
+                }
+                .temp { font-size: 56px; font-weight: bold; color: #e94560; }
             </style>
         </head>
         <body>
             <div class="container">
                 <h1>Temperature Monitor</h1>
-                <div id="temp-display" class="temp">-- °C</div>
-                <div id="status" class="status">Connecting...</div>
-
-                <div class="chart-container">
-                    <canvas id="tempChart"></canvas>
-                </div>
+                <div id="status">Connecting...</div>
+                <div id="sensors" class="sensors"></div>
             </div>
 
             <script>
-                const ctx = document.getElementById('tempChart').getContext('2d');
-                let chart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: [],
-                        datasets: [{
-                            label: 'Temperature (°C)',
-                            data: [],
-                            borderColor: '#e94560',
-                            backgroundColor: 'rgba(233, 69, 96, 0.1)',
-                            borderWidth: 2,
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 3,
-                            pointBackgroundColor: '#e94560'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            x: {
-                                ticks: { color: '#aaa' },
-                                grid: { color: 'rgba(255,255,255,0.1)' }
-                            },
-                            y: {
-                                ticks: { color: '#aaa' },
-                                grid: { color: 'rgba(255,255,255,0.1)' }
-                            }
+                // One Chart instance per sensor id.
+                const charts = {};
+
+                function ensureCard(sensorId) {
+                    if (charts[sensorId]) return charts[sensorId];
+
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML =
+                        '<h2>' + sensorId + '</h2>' +
+                        '<div class="temp">-- °C</div>' +
+                        '<canvas></canvas>';
+                    document.getElementById('sensors').appendChild(card);
+
+                    const chart = new Chart(card.querySelector('canvas').getContext('2d'), {
+                        type: 'line',
+                        data: {
+                            labels: [],
+                            datasets: [{
+                                label: 'Temperature (°C)',
+                                data: [],
+                                borderColor: '#e94560',
+                                backgroundColor: 'rgba(233, 69, 96, 0.1)',
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 2,
+                                pointBackgroundColor: '#e94560'
+                            }]
                         },
-                        plugins: {
-                            legend: { labels: { color: '#eee' } }
+                        options: {
+                            responsive: true,
+                            scales: {
+                                x: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                                y: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                            },
+                            plugins: { legend: { labels: { color: '#eee' } } }
                         }
-                    }
-                });
+                    });
+
+                    charts[sensorId] = { chart, temp: card.querySelector('.temp') };
+                    return charts[sensorId];
+                }
+
+                function setStatus(text, isError) {
+                    const status = document.getElementById('status');
+                    status.textContent = text;
+                    status.className = isError ? 'error' : '';
+                }
 
                 async function updateTemp() {
                     try {
@@ -106,29 +129,24 @@ def index():
                         if (!response.ok) throw new Error('Server error');
                         const data = await response.json();
 
-                        document.getElementById('temp-display').textContent = 
-                            data.temperature.toFixed(2) + ' °C';
-                        document.getElementById('status').textContent = 
-                            'Last updated: ' + new Date(data.timestamp).toLocaleTimeString();
-                        document.getElementById('status').className = 'status';
-
-                        // Update chart with latest data point
                         const timeLabel = new Date(data.timestamp).toLocaleTimeString();
-                        chart.data.labels.push(timeLabel);
-                        chart.data.datasets[0].data.push(data.temperature);
+                        for (const [sensorId, value] of Object.entries(data.sensors)) {
+                            const { chart, temp } = ensureCard(sensorId);
+                            temp.textContent = value.toFixed(2) + ' °C';
 
-                        // Keep only last 300 data points (10 minutes at 2-second intervals)
-                        if (chart.data.labels.length > 300) {
-                            chart.data.labels.shift();
-                            chart.data.datasets[0].data.shift();
+                            chart.data.labels.push(timeLabel);
+                            chart.data.datasets[0].data.push(value);
+
+                            // Keep only last 300 points (10 min at 2-second intervals)
+                            if (chart.data.labels.length > 300) {
+                                chart.data.labels.shift();
+                                chart.data.datasets[0].data.shift();
+                            }
+                            chart.update('none'); // 'none' mode for performance
                         }
-
-                        chart.update('none'); // 'none' mode for performance
+                        setStatus('Last updated: ' + timeLabel, false);
                     } catch (e) {
-                        document.getElementById('temp-display').textContent = 'N/A';
-                        document.getElementById('status').textContent = 
-                            'Error: ' + e.message;
-                        document.getElementById('status').className = 'error';
+                        setStatus('Error: ' + e.message, true);
                     }
                 }
 
@@ -138,11 +156,14 @@ def index():
                         if (!response.ok) throw new Error('Failed to load history');
                         const data = await response.json();
 
-                        chart.data.labels = data.map(d => 
-                            new Date(d.timestamp).toLocaleTimeString()
-                        );
-                        chart.data.datasets[0].data = data.map(d => d.temperature);
-                        chart.update();
+                        for (const [sensorId, points] of Object.entries(data)) {
+                            const { chart } = ensureCard(sensorId);
+                            chart.data.labels = points.map(d =>
+                                new Date(d.timestamp).toLocaleTimeString()
+                            );
+                            chart.data.datasets[0].data = points.map(d => d.temperature);
+                            chart.update();
+                        }
                     } catch (e) {
                         console.error('Failed to load history:', e);
                     }
@@ -160,16 +181,19 @@ def index():
 @app.route('/api/temperature')
 def api_temperature():
     try:
-        current_temp = temp.read_temp()
+        readings = temp.read_all()
+        timestamp = datetime.datetime.now().isoformat()
 
-        point = Point("sensor") \
-            .tag("zone", 3) \
-            .field("temperature", current_temp)
-        write_api.write(bucket="thermochromic", record=point)   
+        points = [
+            Point("sensor").tag("sensor_id", sensor_id).field("temperature", value)
+            for sensor_id, value in readings.items()
+        ]
+        if points:
+            write_api.write(bucket="thermochromic", record=points)
 
         return jsonify({
-            "temperature": current_temp,
-            "timestamp": __import__('datetime').datetime.now().isoformat()
+            "timestamp": timestamp,
+            "sensors": readings,
         })
 
     except Exception as e:
@@ -182,16 +206,17 @@ def api_history():
             from(bucket: "thermochromic")
                 |> range(start: -10m)
                 |> filter(fn: (r) => r["_measurement"] == "sensor")
-                |> filter(fn: (r) => r["zone"] == "3")
+                |> filter(fn: (r) => r["_field"] == "temperature")
                 |> sort(columns: ["_time"])
         '''
-        
+
         result = query_api.query(flux_query, org=ORG)
-        
-        history = []
+
+        history = {}
         for table in result:
             for record in table.records:
-                history.append({
+                sensor_id = record.values.get("sensor_id", "unknown")
+                history.setdefault(sensor_id, []).append({
                     "temperature": record["_value"],
                     "timestamp": record["_time"].isoformat()
                 })
