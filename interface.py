@@ -1,6 +1,7 @@
 import datetime
 from flask import Flask, jsonify
 import temp
+import os
 from influxdb_client import InfluxDBClient, Point
 
 app = Flask(__name__)
@@ -9,11 +10,37 @@ app = Flask(__name__)
 INFLUX_URL = "http://localhost:8086"
 TOKEN = "<token>"  # Replace with your actual token
 ORG = "demo"
+DATA_FILE = os.path.join(os.path.dirname(__file__), 'data.csv')
 
 # Initialize InfluxDB Client (do this once at startup)
 client = InfluxDBClient(url=INFLUX_URL, token=TOKEN, org=ORG)
 write_api = client.write_api()
 query_api = client.query_api()
+
+def log_to_file(timestamp, sensors):
+    cutoff = datetime.datetime.now() - datetime.timedelta(hours=1)
+
+    # Append new data
+    with open(DATA_FILE, 'a') as f:
+        for sensor_id, value in sensors.items():
+            f.write(f'{timestamp},{sensor_id},{value:.2f}\n')
+
+    # Prune old data (keep only past hour)
+    with open(DATA_FILE, 'r') as f:
+        lines = f.readlines()
+
+    valid_lines = []
+    for line in lines:
+        try:
+            line_ts_str = line.split(',')[0]
+            line_ts = datetime.datetime.fromisoformat(line_ts_str)
+            if line_ts >= cutoff:
+                valid_lines.append(line)
+        except (ValueError, IndexError):
+            continue  # skip malformed lines
+
+    with open(DATA_FILE, 'w') as f:
+        f.writelines(valid_lines)
 
 @app.route('/')
 def index():
@@ -190,7 +217,10 @@ def api_temperature():
         ]
         if points:
             write_api.write(bucket="thermochromic", record=points)
-
+        
+        # Log to local data file
+        log_to_file(timestamp, readings)
+        
         return jsonify({
             "timestamp": timestamp,
             "sensors": readings,
