@@ -1,6 +1,7 @@
 import datetime
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import temp
+import temp_control
 import os
 from influxdb_client import InfluxDBClient, Point
 
@@ -90,12 +91,68 @@ def index():
                     word-break: break-all;
                 }
                 .temp { font-size: 56px; font-weight: bold; color: #e94560; }
+                .control {
+                    background: #0f3460;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-bottom: 20px;
+                }
+                .control h2 {
+                    margin: 0 0 12px;
+                    font-size: 13px;
+                    font-weight: normal;
+                    color: #aaa;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                }
+                .control-row {
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .control input {
+                    width: 130px;
+                    padding: 8px 10px;
+                    border: 1px solid #1a5a8a;
+                    border-radius: 6px;
+                    background: #16213e;
+                    color: #eee;
+                    font-size: 14px;
+                }
+                .control button {
+                    padding: 8px 22px;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    cursor: pointer;
+                }
+                .control button:disabled { opacity: 0.4; cursor: default; }
+                #startBtn { background: #2e8b57; color: #fff; }
+                #stopBtn { background: #e94560; color: #fff; }
+                #ctrlStatus { margin-top: 14px; font-size: 14px; color: #aaa; }
+                #ctrlStatus .state { font-weight: bold; color: #eee; }
+                #ctrlStatus.heating .state { color: #f5a623; }
+                #ctrlStatus.holding .state { color: #2e8b57; }
+                #ctrlStatus.fault .state { color: #e94560; }
             </style>
         </head>
         <body>
             <div class="container">
                 <h1>Temperature Monitor</h1>
                 <div id="status">Connecting...</div>
+                <div class="control">
+                    <h2>Hot Plate Control</h2>
+                    <div class="control-row">
+                        <input id="targetInput" type="number" step="0.5" min="1" max="110" placeholder="Target °C">
+                        <input id="minutesInput" type="number" step="1" min="1" placeholder="Hold min (opt.)">
+                        <button id="startBtn">Start</button>
+                        <button id="stopBtn" disabled>Stop</button>
+                    </div>
+                    <div id="ctrlStatus"><span class="state">Idle</span></div>
+                </div>
                 <div id="sensors" class="sensors"></div>
             </div>
 
@@ -150,11 +207,64 @@ def index():
                     status.className = isError ? 'error' : '';
                 }
 
+                function renderControl(ctrl) {
+                    const el = document.getElementById('ctrlStatus');
+                    const active = ctrl.state === 'heating' || ctrl.state === 'holding';
+                    document.getElementById('startBtn').disabled = active;
+                    document.getElementById('stopBtn').disabled = !active;
+                    el.className = ctrl.state;
+
+                    let text = '<span class="state">' +
+                        ctrl.state.charAt(0).toUpperCase() + ctrl.state.slice(1) +
+                        '</span>';
+                    if (ctrl.target_c !== undefined && ctrl.target_c !== null) {
+                        text += ' &nbsp;·&nbsp; target ' + ctrl.target_c.toFixed(1) + ' °C';
+                    }
+                    if (active) {
+                        text += ' &nbsp;·&nbsp; duty ' + Math.round(ctrl.duty * 100) + '%';
+                    }
+                    if (ctrl.state === 'holding' && ctrl.hold_elapsed_s !== null) {
+                        text += ' &nbsp;·&nbsp; held ' + Math.floor(ctrl.hold_elapsed_s / 60) +
+                            'm ' + Math.floor(ctrl.hold_elapsed_s % 60) + 's';
+                        if (ctrl.hold_minutes) text += ' / ' + ctrl.hold_minutes + 'm';
+                    }
+                    if (ctrl.state === 'fault' && ctrl.error) {
+                        text += ' &nbsp;·&nbsp; ' + ctrl.error;
+                    }
+                    el.innerHTML = text;
+                }
+
+                async function startControl() {
+                    const target = parseFloat(document.getElementById('targetInput').value);
+                    if (isNaN(target)) { alert('Enter a target temperature'); return; }
+                    const minsRaw = document.getElementById('minutesInput').value;
+                    const body = { target_c: target };
+                    if (minsRaw !== '') body.minutes = parseFloat(minsRaw);
+                    const response = await fetch('/api/control/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    const data = await response.json();
+                    if (!response.ok) { alert(data.error); return; }
+                    renderControl(data);
+                }
+
+                async function stopControl() {
+                    const response = await fetch('/api/control/stop', { method: 'POST' });
+                    renderControl(await response.json());
+                }
+
+                document.getElementById('startBtn').addEventListener('click', startControl);
+                document.getElementById('stopBtn').addEventListener('click', stopControl);
+
                 async function updateTemp() {
                     try {
                         const response = await fetch('/api/temperature');
                         if (!response.ok) throw new Error('Server error');
                         const data = await response.json();
+
+                        if (data.control) renderControl(data.control);
 
                         const timeLabel = new Date(data.timestamp).toLocaleTimeString();
                         for (const [sensorId, value] of Object.entries(data.sensors)) {
@@ -210,24 +320,58 @@ def api_temperature():
     try:
         readings = temp.read_all()
         timestamp = datetime.datetime.now().isoformat()
+        control = temp_control.controller.status()
 
         points = [
             Point("sensor").tag("sensor_id", sensor_id).field("temperature", value)
             for sensor_id, value in readings.items()
         ]
+
+        # While a control run is active, log its setpoint and duty too
+        log_rows = dict(readings)
+        if control["state"] in ("heating", "holding"):
+            points.append(
+                Point("control")
+                .field("setpoint", float(control["target_c"]))
+                .field("duty", float(control["duty"]))
+            )
+            log_rows["setpoint"] = float(control["target_c"])
+            log_rows["duty"] = float(control["duty"])
+
         if points:
             write_api.write(bucket="thermochromic", record=points)
-        
+
         # Log to local data file
-        log_to_file(timestamp, readings)
-        
+        log_to_file(timestamp, log_rows)
+
         return jsonify({
             "timestamp": timestamp,
             "sensors": readings,
+            "control": control,
         })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/control/status')
+def api_control_status():
+    return jsonify(temp_control.controller.status())
+
+@app.route('/api/control/start', methods=['POST'])
+def api_control_start():
+    try:
+        body = request.get_json(force=True)
+        target_c = body["target_c"]
+        minutes = body.get("minutes")  # None -> hold until stopped
+        temp_control.controller.start(target_c, minutes)
+        return jsonify(temp_control.controller.status())
+    except (KeyError, ValueError, RuntimeError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/control/stop', methods=['POST'])
+def api_control_stop():
+    temp_control.controller.stop()
+    return jsonify(temp_control.controller.status())
 
 @app.route('/api/history')
 def api_history():

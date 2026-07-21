@@ -19,9 +19,11 @@ dist/
 
 # Environment / secrets
 .env
+.lgd-nfy0
 
 # Editor / OS
 .vscode/
 .idea/
 *.swp
 .DS_Store
+.claude

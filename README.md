@@ -1,5 +1,5 @@
 # pi5_ds18b20_demo
-Temperature monitoring application for one or more DS18B20 sensors. Features a live graph of observed temperatures over a period of 10 minutes.
+Temperature monitoring and control application using DS18B20 sensor. Features a live graph of observed temperatures over a period of 10 minutes.
 
 <img width="882" height="660" alt="temp_monitor" src="https://github.com/user-attachments/assets/cf0dce22-0f66-459d-9a94-fe3ec3a81425" />
 
@@ -20,14 +20,34 @@ The app discovers every sensor on the bus automatically:
 
 Each reading is stored in InfluxDB tagged with its `sensor_id`, and the web dashboard renders a separate readout + chart card per sensor.
 
+## Hot plate control
+
+`temp_control.py` closes the loop: it drives an SSR (via GPIO17 → 1 kΩ → 2N2222A low-side switch) using DS18B20 readings as feedback, with a PID loop and time-proportioned SSR switching. The controller runs in a background thread, so the web dashboard and data logging stay live during a run.
+
+From the dashboard: enter a target temperature (and an optional hold duration in minutes) in the **Hot Plate Control** panel and press Start. The panel shows the state (heating/holding), current duty cycle, and hold progress; Stop turns the heater off immediately.
+
+API:
+
+- `POST /api/control/start` with `{"target_c": 60, "minutes": 10}` (`minutes` optional — omit to hold until stopped)
+- `POST /api/control/stop`
+- `GET /api/control/status`
+
+While a run is active, setpoint and duty are logged alongside the sensor readings (CSV rows `setpoint` / `duty`, InfluxDB measurement `control`).
+
+From the command line or Python:
+
+```bash
+python temp_control.py 60 10   # hold 60 °C for 10 minutes, then shut off
+```
+
+Safety rails: hard 110 °C ceiling (DS18B20 max is 125 °C), heat-up timeout, sensor-stall detection, and the SSR is forced off on any exit, error, or Ctrl-C. Keep the plate's own thermostat in series as a hardware backstop and fuse the AC hot side — SSRs fail shorted.
+
+Requires `gpiozero` with the `lgpio` backend (`RPi.GPIO` does not work on the Pi 5). The venv uses the system `lgpio` package via `include-system-site-packages = true`.
 
 **Acknowledgements**
 
 Built the circuit and the code with the help of raspberry pi tutorial:
 https://www.circuitbasics.com/raspberry-pi-ds18b20-temperature-sensor-tutorial/
 
-Local LLM also helped write some of the code:
-qwen3.6-35b-a3b
-
-Also used Claude Code CLI:
+Claude Code CLI:
 Claude Opus 4.8
