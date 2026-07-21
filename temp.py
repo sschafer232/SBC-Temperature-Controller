@@ -15,15 +15,23 @@ def read_temp_raw(device_id):
     with open(base_dir + device_id + '/w1_slave', 'r') as f:
         return f.readlines()
 
-def read_temp(device_id=None):
-    """Read one sensor in Celsius. Defaults to the first sensor on the bus."""
+def read_temp(device_id=None, timeout_s=None):
+    """Read one sensor in Celsius. Defaults to the first sensor on the bus.
+
+    If timeout_s is given, stop waiting for a valid CRC after that many
+    seconds and raise TimeoutError instead of blocking indefinitely.
+    """
     if device_id is None:
         sensors = list_sensors()
         if not sensors:
             raise RuntimeError('No DS18B20 sensors found on the bus')
         device_id = sensors[0]
+    deadline = None if timeout_s is None else time.monotonic() + timeout_s
     lines = read_temp_raw(device_id)
     while lines[0].strip()[-3:] != 'YES':
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError(
+                f'no valid CRC from {device_id} within {timeout_s}s')
         time.sleep(0.2)
         lines = read_temp_raw(device_id)
     equals_pos = lines[1].find('t=')
