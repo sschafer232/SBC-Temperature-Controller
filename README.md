@@ -1,24 +1,13 @@
-# pi5_ds18b20_demo
+# SBC-Temperature-Controller
 Temperature monitoring and control application using DS18B20 sensor. Features a live graph of observed temperatures over a period of 10 minutes.
 
-<img width="882" height="660" alt="temp_monitor" src="https://github.com/user-attachments/assets/cf0dce22-0f66-459d-9a94-fe3ec3a81425" />
+<img width="1728" height="991" alt="Screenshot 2026-07-24 at 8 09 27 PM" src="https://github.com/user-attachments/assets/1840ed7d-7fe8-44b5-94b1-bc178263a3e5" />
 
-## Multiple sensors
+## Circuit
 
-<img width="2028" height="1682" alt="image" src="https://github.com/user-attachments/assets/13270391-c707-42a7-a79f-29ace7db4564" />
+<img width="849" height="875" alt="Screenshot 2026-07-24 at 8 48 36 PM" src="https://github.com/user-attachments/assets/e04f30b8-8fb2-4c38-bc95-395d95050a37" />
 
-<img width="1024" height="768" alt="image" src="https://github.com/user-attachments/assets/c6e02f9f-2384-4fe5-b87b-0bce7455a2b0" />
-
-
-DS18B20s use the 1-Wire protocol, so several sensors can share the same data pin (and a single 4.7kΩ pull-up resistor). Each sensor has a unique 64-bit ROM address and appears as its own `28-xxxx` device under `/sys/bus/w1/devices/`.
-
-The app discovers every sensor on the bus automatically:
-
-- `temp.list_sensors()` — IDs of all connected sensors
-- `temp.read_temp(device_id=None)` — read one sensor (defaults to the first)
-- `temp.read_all()` — read every sensor, returning `{device_id: temperature_c}`
-
-Each reading is stored in InfluxDB tagged with its `sensor_id`, and the web dashboard renders a separate readout + chart card per sensor.
+<img width="5712" height="4284" alt="circuit_photo" src="https://github.com/user-attachments/assets/c644a300-9a1a-4da9-b8ae-8dfcfaf27742" />
 
 ## Hot plate control
 
@@ -34,20 +23,33 @@ API:
 
 While a run is active, setpoint and duty are logged alongside the sensor readings (CSV rows `setpoint` / `duty`, InfluxDB measurement `control`).
 
-From the command line or Python:
+**Command line and Python library usage**
+
+CLI:
 
 ```bash
 python temp_control.py 60 10   # hold 60 °C for 10 minutes, then shut off
 ```
 
+Library:
+
+    from temp_control import controller
+    controller.start(60, minutes=10)   # minutes=None -> hold until stop()
+    controller.status()
+    controller.stop()
+
 Safety rails: hard 110 °C ceiling (DS18B20 max is 125 °C), heat-up timeout, sensor-stall detection, and the SSR is forced off on any exit, error, or Ctrl-C. Keep the plate's own thermostat in series as a hardware backstop and fuse the AC hot side — SSRs fail shorted.
 
 Requires `gpiozero` with the `lgpio` backend (`RPi.GPIO` does not work on the Pi 5). The venv uses the system `lgpio` package via `include-system-site-packages = true`.
 
-**Acknowledgements**
+## Acknowledgements
 
-Built the circuit and the code with the help of raspberry pi tutorial:
+Raspberry pi tutorial:
+
 https://www.circuitbasics.com/raspberry-pi-ds18b20-temperature-sensor-tutorial/
 
-Claude Code CLI:
-Claude Opus 4.8
+AI Tools:
+
+Claude Code (Claude Opus 4.8)
+
+Codex (GPT-5.6-Sol)
