@@ -46,115 +46,302 @@ def log_to_file(timestamp, sensors):
 @app.route('/')
 def index():
     return """
-    <html>
+    <!doctype html>
+    <html lang="en">
         <head>
-            <title>Temperature Monitor</title>
+            <meta charset="utf-8">
+            <title>Temperature — Live Monitor</title>
             <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
+                :root {
+                    color-scheme: dark;
+                    --bg: #000;
+                    --surface: #0a0a0a;
+                    --surface-raised: #111;
+                    --border: #262626;
+                    --border-strong: #3a3a3a;
+                    --text: #f5f5f5;
+                    --muted: #8a8a8a;
+                    --subtle: #5f5f5f;
+                    --danger: #ff6b6b;
+                    --success: #8ee3b1;
+                    --warning: #f2c66d;
+                }
+                * { box-sizing: border-box; }
+                html { background: var(--bg); }
                 body {
-                    font-family: Arial, sans-serif;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
+                    min-width: 320px;
                     min-height: 100vh;
                     margin: 0;
-                    background-color: #1a1a2e;
-                    color: #eee;
+                    background: var(--bg);
+                    color: var(--text);
+                    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                        "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+                    -webkit-font-smoothing: antialiased;
+                    text-rendering: optimizeLegibility;
                 }
+                button, input { font: inherit; }
                 .container {
-                    text-align: center;
-                    background: #16213e;
-                    padding: 40px 60px;
-                    border-radius: 12px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    max-width: 900px;
-                    width: 100%;
+                    width: min(100%, 1680px);
+                    margin: 0 auto;
+                    padding: 28px 32px 40px;
                 }
-                h1 { margin: 0 0 20px; font-size: 24px; color: #eee; }
-                #status { margin-bottom: 20px; font-size: 14px; color: #aaa; }
-                #status.error { color: #e94560; }
+                .topbar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 24px;
+                    min-height: 48px;
+                    margin-bottom: 32px;
+                }
+                .brand {
+                    display: flex;
+                    align-items: baseline;
+                    gap: 12px;
+                }
+                h1 {
+                    margin: 0;
+                    color: var(--text);
+                    font-size: 20px;
+                    font-weight: 600;
+                    letter-spacing: -0.025em;
+                }
+                .brand-copy {
+                    color: var(--subtle);
+                    font-size: 13px;
+                }
+                #status {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    color: var(--muted);
+                    font-size: 12px;
+                    font-variant-numeric: tabular-nums;
+                    white-space: nowrap;
+                }
+                #status::before {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 50%;
+                    background: #b7b7b7;
+                    box-shadow: 0 0 0 3px rgba(183,183,183,0.1);
+                    content: "";
+                }
+                #status.error { color: var(--danger); }
+                #status.error::before {
+                    background: var(--danger);
+                    box-shadow: 0 0 0 3px rgba(255,107,107,0.12);
+                }
+                .control {
+                    display: grid;
+                    grid-template-columns: minmax(190px, 1fr) auto;
+                    align-items: center;
+                    gap: 24px;
+                    margin-bottom: 20px;
+                    padding: 18px 20px;
+                    border: 1px solid var(--border);
+                    border-radius: 16px;
+                    background: var(--surface);
+                }
+                .control-copy {
+                    min-width: 0;
+                }
+                .control h2 {
+                    margin: 0 0 6px;
+                    color: var(--text);
+                    font-size: 14px;
+                    font-weight: 550;
+                    letter-spacing: -0.01em;
+                }
+                #ctrlStatus {
+                    overflow: hidden;
+                    color: var(--muted);
+                    font-size: 12px;
+                    font-variant-numeric: tabular-nums;
+                    line-height: 1.35;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                #ctrlStatus .state { color: var(--text); font-weight: 550; }
+                #ctrlStatus.heating .state { color: var(--warning); }
+                #ctrlStatus.holding .state { color: var(--success); }
+                #ctrlStatus.fault .state { color: var(--danger); }
+                .control-row {
+                    display: flex;
+                    align-items: flex-end;
+                    gap: 8px;
+                }
+                .field {
+                    display: grid;
+                    gap: 7px;
+                }
+                .field label {
+                    padding-left: 2px;
+                    color: var(--subtle);
+                    font-size: 10px;
+                    font-weight: 600;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                }
+                .control input {
+                    width: 132px;
+                    height: 38px;
+                    padding: 0 12px;
+                    border: 1px solid var(--border);
+                    border-radius: 9px;
+                    outline: none;
+                    background: var(--surface-raised);
+                    color: var(--text);
+                    font-size: 13px;
+                    font-variant-numeric: tabular-nums;
+                    transition: border-color 140ms ease, box-shadow 140ms ease;
+                }
+                .control input::placeholder { color: #545454; }
+                .control input:focus {
+                    border-color: #707070;
+                    box-shadow: 0 0 0 3px rgba(255,255,255,0.08);
+                }
+                .control button {
+                    height: 38px;
+                    padding: 0 17px;
+                    border: 1px solid transparent;
+                    border-radius: 9px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 140ms ease, border-color 140ms ease,
+                        color 140ms ease, opacity 140ms ease;
+                }
+                .control button:focus-visible {
+                    outline: 2px solid #fff;
+                    outline-offset: 2px;
+                }
+                .control button:disabled { opacity: 0.28; cursor: default; }
+                #startBtn { background: #f2f2f2; color: #080808; }
+                #startBtn:not(:disabled):hover { background: #fff; }
+                #stopBtn {
+                    border-color: var(--border-strong);
+                    background: transparent;
+                    color: #d8d8d8;
+                }
+                #stopBtn:not(:disabled):hover { border-color: #626262; color: #fff; }
                 .sensors {
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                    grid-template-columns: minmax(0, 1fr);
                     gap: 20px;
                 }
                 .card {
-                    background: #0f3460;
-                    padding: 20px;
-                    border-radius: 8px;
+                    min-width: 0;
+                    padding: 26px 28px 22px;
+                    border: 1px solid var(--border);
+                    border-radius: 20px;
+                    background: var(--surface);
+                }
+                .card-header {
+                    display: flex;
+                    align-items: flex-end;
+                    justify-content: space-between;
+                    gap: 28px;
+                    margin-bottom: 16px;
+                }
+                .sensor-meta { min-width: 0; }
+                .eyebrow {
+                    margin: 0 0 9px;
+                    color: var(--subtle);
+                    font-size: 10px;
+                    font-weight: 650;
+                    letter-spacing: 0.1em;
+                    text-transform: uppercase;
                 }
                 .card h2 {
-                    margin: 0 0 10px;
-                    font-size: 13px;
-                    font-weight: normal;
-                    color: #aaa;
-                    word-break: break-all;
+                    overflow: hidden;
+                    margin: 0;
+                    color: var(--muted);
+                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
+                        Consolas, "Liberation Mono", monospace;
+                    font-size: 12px;
+                    font-weight: 400;
+                    line-height: 1.4;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
                 }
-                .temp { font-size: 56px; font-weight: bold; color: #e94560; }
-                .control {
-                    background: #0f3460;
-                    padding: 20px;
-                    border-radius: 8px;
-                    margin-bottom: 20px;
+                .temp {
+                    flex: 0 0 auto;
+                    color: var(--text);
+                    font-size: clamp(52px, 6vw, 88px);
+                    font-weight: 520;
+                    font-variant-numeric: tabular-nums;
+                    letter-spacing: -0.065em;
+                    line-height: 0.88;
+                    white-space: nowrap;
                 }
-                .control h2 {
-                    margin: 0 0 12px;
-                    font-size: 13px;
-                    font-weight: normal;
-                    color: #aaa;
-                    text-transform: uppercase;
-                    letter-spacing: 1px;
+                .temp-unit {
+                    margin-left: 6px;
+                    color: var(--muted);
+                    font-size: 0.36em;
+                    font-weight: 450;
+                    letter-spacing: -0.02em;
+                    vertical-align: top;
                 }
-                .control-row {
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    gap: 10px;
-                    flex-wrap: wrap;
+                .chart-wrap {
+                    position: relative;
+                    width: 100%;
+                    height: clamp(380px, 58vh, 720px);
                 }
-                .control input {
-                    width: 130px;
-                    padding: 8px 10px;
-                    border: 1px solid #1a5a8a;
-                    border-radius: 6px;
-                    background: #16213e;
-                    color: #eee;
-                    font-size: 14px;
+                @media (max-width: 820px) {
+                    .container { padding: 22px 18px 28px; }
+                    .topbar { align-items: flex-start; margin-bottom: 24px; }
+                    .brand { display: grid; gap: 4px; }
+                    .control { grid-template-columns: 1fr; gap: 18px; }
+                    .control-row { width: 100%; }
+                    .field { flex: 1 1 120px; }
+                    .control input { width: 100%; }
+                    .card { padding: 22px 20px 18px; border-radius: 16px; }
+                    .chart-wrap { height: clamp(340px, 52vh, 560px); }
                 }
-                .control button {
-                    padding: 8px 22px;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 14px;
-                    font-weight: bold;
-                    cursor: pointer;
+                @media (max-width: 560px) {
+                    .topbar { gap: 14px; }
+                    .brand-copy { display: none; }
+                    #status { max-width: 52%; white-space: normal; }
+                    .control-row { display: grid; grid-template-columns: 1fr 1fr; }
+                    .control button { width: 100%; }
+                    .card-header { display: grid; gap: 24px; }
+                    .temp { grid-row: 1; }
+                    .sensor-meta { grid-row: 2; }
+                    .chart-wrap { height: 360px; }
                 }
-                .control button:disabled { opacity: 0.4; cursor: default; }
-                #startBtn { background: #2e8b57; color: #fff; }
-                #stopBtn { background: #e94560; color: #fff; }
-                #ctrlStatus { margin-top: 14px; font-size: 14px; color: #aaa; }
-                #ctrlStatus .state { font-weight: bold; color: #eee; }
-                #ctrlStatus.heating .state { color: #f5a623; }
-                #ctrlStatus.holding .state { color: #2e8b57; }
-                #ctrlStatus.fault .state { color: #e94560; }
             </style>
         </head>
         <body>
-            <div class="container">
-                <h1>Temperature Monitor</h1>
-                <div id="status">Connecting...</div>
+            <main class="container">
+                <header class="topbar">
+                    <div class="brand">
+                        <h1>Temperature</h1>
+                        <span class="brand-copy">Live thermal monitor</span>
+                    </div>
+                    <div id="status" role="status" aria-live="polite">Connecting...</div>
+                </header>
                 <div class="control">
-                    <h2>Hot Plate Control</h2>
+                    <div class="control-copy">
+                        <h2>Hot plate control</h2>
+                        <div id="ctrlStatus" aria-live="polite"><span class="state">Idle</span></div>
+                    </div>
                     <div class="control-row">
-                        <input id="targetInput" type="number" step="0.5" min="1" max="110" placeholder="Target °C">
-                        <input id="minutesInput" type="number" step="1" min="1" placeholder="Hold min (opt.)">
+                        <div class="field">
+                            <label for="targetInput">Target</label>
+                            <input id="targetInput" type="number" step="0.5" min="1" max="110" placeholder="Temperature °C">
+                        </div>
+                        <div class="field">
+                            <label for="minutesInput">Hold time</label>
+                            <input id="minutesInput" type="number" step="1" min="1" placeholder="Optional minutes">
+                        </div>
                         <button id="startBtn">Start</button>
                         <button id="stopBtn" disabled>Stop</button>
                     </div>
-                    <div id="ctrlStatus"><span class="state">Idle</span></div>
                 </div>
                 <div id="sensors" class="sensors"></div>
-            </div>
+            </main>
 
             <script>
                 // One Chart instance per sensor id.
@@ -166,9 +353,16 @@ def index():
                     const card = document.createElement('div');
                     card.className = 'card';
                     card.innerHTML =
-                        '<h2>' + sensorId + '</h2>' +
-                        '<div class="temp">-- °C</div>' +
-                        '<canvas></canvas>';
+                        '<div class="card-header">' +
+                            '<div class="sensor-meta">' +
+                                '<p class="eyebrow">Live reading</p>' +
+                                '<h2></h2>' +
+                            '</div>' +
+                            '<div class="temp"><span class="temp-value">--</span>' +
+                                '<span class="temp-unit">°C</span></div>' +
+                        '</div>' +
+                        '<div class="chart-wrap"><canvas></canvas></div>';
+                    card.querySelector('h2').textContent = sensorId;
                     document.getElementById('sensors').appendChild(card);
 
                     const chart = new Chart(card.querySelector('canvas').getContext('2d'), {
@@ -178,26 +372,75 @@ def index():
                             datasets: [{
                                 label: 'Temperature (°C)',
                                 data: [],
-                                borderColor: '#e94560',
-                                backgroundColor: 'rgba(233, 69, 96, 0.1)',
-                                borderWidth: 2,
+                                borderColor: '#f0f0f0',
+                                backgroundColor: 'rgba(255, 255, 255, 0.035)',
+                                borderWidth: 2.25,
                                 fill: true,
-                                tension: 0.3,
-                                pointRadius: 2,
-                                pointBackgroundColor: '#e94560'
+                                tension: 0.32,
+                                pointRadius: 0,
+                                pointHoverRadius: 4,
+                                pointHoverBackgroundColor: '#ffffff',
+                                pointHoverBorderColor: '#0a0a0a',
+                                pointHoverBorderWidth: 2
                             }]
                         },
                         options: {
                             responsive: true,
-                            scales: {
-                                x: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.1)' } },
-                                y: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                            maintainAspectRatio: false,
+                            animation: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false
                             },
-                            plugins: { legend: { labels: { color: '#eee' } } }
+                            layout: {
+                                padding: { top: 10, right: 8, bottom: 0, left: 0 }
+                            },
+                            scales: {
+                                x: {
+                                    border: { display: false },
+                                    ticks: {
+                                        color: '#686868',
+                                        font: { size: 10 },
+                                        maxTicksLimit: 8,
+                                        maxRotation: 0
+                                    },
+                                    grid: { display: false }
+                                },
+                                y: {
+                                    border: { display: false },
+                                    ticks: {
+                                        color: '#686868',
+                                        font: { size: 10 },
+                                        maxTicksLimit: 6,
+                                        padding: 10,
+                                        callback: value => value + '°'
+                                    },
+                                    grid: {
+                                        color: 'rgba(255,255,255,0.07)',
+                                        drawTicks: false
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: '#f2f2f2',
+                                    titleColor: '#686868',
+                                    bodyColor: '#090909',
+                                    borderWidth: 0,
+                                    padding: 12,
+                                    displayColors: false,
+                                    titleFont: { size: 11, weight: 'normal' },
+                                    bodyFont: { size: 14, weight: 'bold' },
+                                    callbacks: {
+                                        label: context => context.parsed.y.toFixed(2) + ' °C'
+                                    }
+                                }
+                            }
                         }
                     });
 
-                    charts[sensorId] = { chart, temp: card.querySelector('.temp') };
+                    charts[sensorId] = { chart, temp: card.querySelector('.temp-value') };
                     return charts[sensorId];
                 }
 
@@ -269,7 +512,7 @@ def index():
                         const timeLabel = new Date(data.timestamp).toLocaleTimeString();
                         for (const [sensorId, value] of Object.entries(data.sensors)) {
                             const { chart, temp } = ensureCard(sensorId);
-                            temp.textContent = value.toFixed(2) + ' °C';
+                            temp.textContent = value.toFixed(2);
 
                             chart.data.labels.push(timeLabel);
                             chart.data.datasets[0].data.push(value);
